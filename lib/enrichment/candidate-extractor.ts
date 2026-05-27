@@ -1,3 +1,4 @@
+import type { SourceLayer, SourceTrust } from "@prisma/client";
 import type { SearchResult } from "@/lib/search/ranker";
 import { confidenceFor, type Confidence } from "./confidence";
 
@@ -16,6 +17,9 @@ export type ExtractedCandidate = {
   score: number;
   explanation: string;
   sources: SearchResult[];
+  sourceLayer: SourceLayer;
+  sourceTrust: SourceTrust;
+  priority: number;
 };
 
 type WorkingCandidate = {
@@ -45,17 +49,25 @@ export function extractCandidates(results: SearchResult[]): ExtractedCandidate[]
         (candidate.strength * 5 + sources.length * 4 + sources.reduce((sum, item) => sum + item.score, 0) / 8).toFixed(1),
       );
       const strongMatches = candidate.strength >= 3 ? 1 : 0;
-      const confidence = confidenceFor(score, sources.length, strongMatches);
+      const priority = candidatePriority(sources);
+      const leadingSource = [...sources].sort((a, b) => sourceAuthority(b) - sourceAuthority(a))[0];
+      const baseConfidence = confidenceFor(score, sources.length, strongMatches);
+      const confidence = priority >= 600
+        ? "High"
+        : priority >= 500 && baseConfidence === "Low" ? "Medium" : baseConfidence;
       return {
         type: candidate.type,
         value: candidate.value,
         confidence,
         score,
-        explanation: `${confidence} confidence based on ${sources.length} indexed source snippet${sources.length === 1 ? "" : "s"} and ${candidate.strength >= 3 ? "a direct identifying phrase" : "supporting keyword context"}.`,
-        sources: sources.slice(0, 3),
+        explanation: `${confidence} confidence based on ${sources.length} indexed source snippet${sources.length === 1 ? "" : "s"} and ${candidate.strength >= 3 ? "a direct identifying phrase" : "supporting keyword context"}. ${priorityExplanation(priority)}`,
+        sources: [...new Map([leadingSource, ...sources].filter(Boolean).map((source) => [source!.chunkId, source!])).values()].slice(0, 3),
+        sourceLayer: leadingSource?.sourceLayer ?? "BASELINE",
+        sourceTrust: leadingSource?.sourceTrust ?? "LOW",
+        priority,
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.priority - a.priority || b.score - a.score);
 }
 
 function addCandidate(
@@ -85,9 +97,11 @@ function addCandidate(
 function extractCommunities(text: string) {
   const matches: Array<{ value: string; strength: number }> = [];
   const patterns = [
-    { regex: /(?:community|subdivision)\s+(?:of\s+|named\s+)?([A-Z][A-Za-z&' ]{2,45}?)(?=\s+(?:features|offers|includes|is|located|built|by|homeowners)|[,.]|$)/g, strength: 3 },
-    { regex: /located in (?:the\s+)?([A-Z][A-Za-z&' ]{2,45}?)\s+(?:community|subdivision|neighborhood)/g, strength: 3 },
-    { regex: /(?:\b[Tt]he\s+)?\b([A-Z][A-Za-z&']+(?:\s+[A-Z][A-Za-z&']+){0,3}\s+(?:Estates|Ridge|Village|Landing|Reserve|Crossing|Grove|Creek))\s+(?:community|subdivision|neighborhood)/g, strength: 2 },
+    { regex: /(?:verified|baseline)\s+(?:community|subdivision):\s*([A-Z][A-Za-z&' ]{2,60}?)(?=\n|$)/gi, strength: 3 },
+    { regex: /(?:community|subdivision):\s*([A-Z][A-Za-z&' ]{2,60}?)(?=\n|$)/gi, strength: 2 },
+    { regex: /(?:community|subdivision)\s+(?:of\s+|named\s+)?([A-Z][A-Za-z&' ]{2,45}?)(?=\s+(?:features|offers|includes|is|located|built|by|homeowners)|[,.]|$)/gi, strength: 3 },
+    { regex: /located in (?:the\s+)?([A-Z][A-Za-z&' ]{2,45}?)\s+(?:community|subdivision|neighborhood)/gi, strength: 3 },
+    { regex: /(?:\bthe\s+)?\b([A-Z][A-Za-z&']+(?:\s+[A-Z][A-Za-z&']+){0,3}\s+(?:Estates|Ridge|Village|Landing|Reserve|Crossing|Grove|Creek))\s+(?:community|subdivision|neighborhood)/gi, strength: 2 },
   ];
 
   for (const pattern of patterns) {
@@ -107,11 +121,47 @@ function extractBuilders(text: string) {
     }
   }
 
-  const genericPattern = /(?:built by|homes by|builder[:\s]+)\s*([A-Z][A-Za-z&' ]{2,40}?(?:Homes|Builders|Residential|Construction))/g;
+  const genericPattern = /(?:built by|homes by|builder[:\s]+)\s*([A-Z][A-Za-z&' ]{2,40}?(?:Homes|Builders|Residential|Construction))/gi;
   for (const match of text.matchAll(genericPattern)) {
     matches.push({ value: match[1], strength: 3 });
   }
+  const labeledPattern = /(?:verified|baseline)\s+builder:\s*([A-Z][A-Za-z&' ]{2,60}?)(?=\n|$)/gi;
+  for (const match of text.matchAll(labeledPattern)) {
+    matches.push({ value: match[1], strength: 3 });
+  }
   return matches;
+}
+
+function candidatePriority(sources: SearchResult[]) {
+  if (sources.some((source) => source.sourceLayer === "REVIEWED" && source.sourceTrust === "VERIFIED")) return 700;
+  if (sources.some((source) => source.sourceLayer === "INTERNAL" && source.sourceTrust === "VERIFIED")) return 600;
+  if (sources.some((source) => source.sourceLayer === "INTERNAL" && source.sourceTrust === "HIGH")) return 500;
+  if (sources.some(isOfficialSource)) return 400;
+  const baselineDocuments = new Set(sources.filter((source) => source.sourceLayer === "BASELINE").map((source) => source.documentId));
+  return baselineDocuments.size > 1 ? 300 : baselineDocuments.size === 1 ? 200 : 100;
+}
+
+function sourceAuthority(source: SearchResult) {
+  if (source.sourceLayer === "REVIEWED" && source.sourceTrust === "VERIFIED") return 700;
+  if (source.sourceLayer === "INTERNAL" && source.sourceTrust === "VERIFIED") return 600;
+  if (source.sourceLayer === "INTERNAL" && source.sourceTrust === "HIGH") return 500;
+  if (isOfficialSource(source)) return 400;
+  return source.sourceLayer === "BASELINE" ? 200 : 100;
+}
+
+function isOfficialSource(source: SearchResult) {
+  return source.sourceType === "BUILDER_BROCHURE"
+    || /\b(?:builder|community)\b.*\b(?:official|website|page)\b/i.test(source.sourceName);
+}
+
+function priorityExplanation(priority: number) {
+  if (priority >= 700) return "A reviewed, verified source controls the final recommendation.";
+  if (priority >= 600) return "Verified internal evidence controls the final recommendation.";
+  if (priority >= 500) return "High-trust internal evidence outranks baseline evidence.";
+  if (priority >= 400) return "An official builder or community source supports this recommendation.";
+  if (priority >= 300) return "Multiple baseline sources corroborate this label.";
+  if (priority >= 200) return "This is supported by a baseline source and should be reviewed when consequential.";
+  return "This is a weak inferred match needing human review.";
 }
 
 function titleCase(value: string) {

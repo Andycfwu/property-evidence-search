@@ -1,4 +1,4 @@
-import { PrismaClient, ReviewStatus, SourceType } from "@prisma/client";
+import { PrismaClient, ReviewStatus, SourceLayer, SourceTrust, SourceType } from "@prisma/client";
 import { indexDocument } from "../lib/search/indexer";
 import { parseAddress } from "../lib/enrichment/address-parser";
 import { runEvidenceJob } from "../lib/enrichment/run-enrichment";
@@ -8,17 +8,25 @@ const prisma = new PrismaClient();
 const documents = [
   {
     title: "Willow Creek Estates Phase 2 Sales Release (Mock)",
-    sourceType: SourceType.BUILDER_BROCHURE,
+    sourceType: SourceType.LISTING_EXPORT,
+    sourceLayer: SourceLayer.BASELINE,
+    sourceTrust: SourceTrust.MEDIUM,
+    sourceName: "Licensed Listing Export (Mock)",
+    isOverrideSource: false,
     sourceUrl: "https://example.test/mock/willow-creek-sales-release",
     text: `MOCK DOCUMENT - FOR DEMONSTRATION ONLY
 
-The community of Willow Creek Estates features new residences along Juniper Hollow Drive in Raleigh, North Carolina 27603. Homes at 1847 Juniper Hollow Drive, Raleigh, NC 27603 are included in the Phase 2 release.
+The community of Willow Creek features new residences along Juniper Hollow Drive in Raleigh, North Carolina 27603. Homes at 1847 Juniper Hollow Drive, Raleigh, NC 27603 are included in the Phase 2 release.
 
-These residences are built by Northline Homes. Sales material identifies Northline Homes as the exclusive builder for Willow Creek Estates Phase 2.`,
+These residences are built by Northline Homes. Sales material identifies Northline Homes as the listed builder for Willow Creek.`,
   },
   {
     title: "Willow Creek HOA Welcome Circular (Mock)",
     sourceType: SourceType.HOA_NOTICE,
+    sourceLayer: SourceLayer.REVIEWED,
+    sourceTrust: SourceTrust.VERIFIED,
+    sourceName: "RealTorch Reviewed Community Crosswalk (Mock)",
+    isOverrideSource: true,
     sourceUrl: "https://example.test/mock/willow-hoa-circular",
     text: `MOCK HOA CIRCULAR
 
@@ -29,6 +37,10 @@ Community records reference homes by Northline Homes in the current release.`,
   {
     title: "Meadow Ridge Neighborhood Market Sheet (Mock)",
     sourceType: SourceType.LISTING_EXPORT,
+    sourceLayer: SourceLayer.BASELINE,
+    sourceTrust: SourceTrust.MEDIUM,
+    sourceName: "Public Market Export (Mock)",
+    isOverrideSource: false,
     sourceUrl: "https://example.test/mock/meadow-ridge-market",
     text: `MOCK MARKET SHEET
 
@@ -37,6 +49,10 @@ The home at 62 Lantern Way, Durham, NC 27703 is located in the Meadow Ridge neig
   {
     title: "Cedar Crossing Parcel Notes (Mock)",
     sourceType: SourceType.PUBLIC_RECORD,
+    sourceLayer: SourceLayer.BASELINE,
+    sourceTrust: SourceTrust.LOW,
+    sourceName: "Public Parcel Notes (Mock)",
+    isOverrideSource: false,
     sourceUrl: "https://example.test/mock/cedar-crossing-parcels",
     text: `MOCK PARCEL RESEARCH NOTES
 
@@ -59,6 +75,10 @@ async function main() {
       data: {
         title: input.title,
         sourceType: input.sourceType,
+        sourceLayer: input.sourceLayer,
+        sourceTrust: input.sourceTrust,
+        sourceName: input.sourceName,
+        isOverrideSource: input.isOverrideSource,
         sourceUrl: input.sourceUrl,
         rawText: input.text,
         cleanText: "",

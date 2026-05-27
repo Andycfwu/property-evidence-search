@@ -1,16 +1,23 @@
+import { resolveRecommendation, type RecommendationCandidate } from "@/lib/enrichment/recommendation-resolver";
+
 type ReviewSource = {
+  id: string;
   chunkId: string;
+  score: number;
   snippet: string;
+  sourceType: string;
   sourceUrl: string | null;
-  document: { title: string };
+  document: {
+    title: string;
+    sourceLayer: string;
+    sourceTrust: string;
+    sourceType: string;
+    sourceName: string;
+    isOverrideSource: boolean;
+  };
 };
 
-type ReviewCandidate = {
-  candidateType: string;
-  value: string;
-  confidence: string;
-  score: number;
-  explanation: string;
+type ReviewCandidate = RecommendationCandidate & {
   sources: ReviewSource[];
 };
 
@@ -30,49 +37,25 @@ export type ReviewPackageJob = {
 
 type Finding = {
   address: string;
-  community?: ReviewCandidate;
-  builder?: ReviewCandidate;
-  confidence: string;
-  explanation: string;
+  recommendation: ReturnType<typeof resolveRecommendation>;
   sources: ReviewSource[];
-  review?: ReviewPackageJob["addresses"][number]["reviewDecision"];
+  explanation: string;
+  review: ReviewPackageJob["addresses"][number]["reviewDecision"];
 };
-
-const confidenceOrder: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
-
-function bestCandidate(candidates: ReviewCandidate[], type: string) {
-  return candidates
-    .filter((candidate) => candidate.candidateType === type)
-    .sort((a, b) => b.score - a.score)[0];
-}
-
-function uniqueSources(candidates: Array<ReviewCandidate | undefined>) {
-  const sources = candidates.flatMap((candidate) => candidate?.sources ?? []);
-  return [...new Map(sources.map((source) => [source.chunkId, source])).values()];
-}
-
-function confidenceFor(candidates: Array<ReviewCandidate | undefined>) {
-  return candidates
-    .map((candidate) => candidate?.confidence)
-    .filter((confidence): confidence is string => Boolean(confidence))
-    .sort((a, b) => (confidenceOrder[b] ?? 0) - (confidenceOrder[a] ?? 0))[0] ?? "Needs review";
-}
 
 function findingsFor(job: ReviewPackageJob): Finding[] {
   return job.addresses.map((address) => {
-    const community = bestCandidate(address.candidates, "COMMUNITY");
-    const builder = bestCandidate(address.candidates, "BUILDER");
-    const candidates = [community, builder];
-    const explanations = [...new Set(candidates.map((candidate) => candidate?.explanation).filter(Boolean))];
-    return {
-      address: address.rawAddress,
-      community,
-      builder,
-      confidence: confidenceFor(candidates),
-      explanation: explanations.join(" "),
-      sources: uniqueSources(candidates),
-      review: address.reviewDecision,
-    };
+    const recommendation = resolveRecommendation(address.candidates, address.reviewDecision);
+    const selected = [
+      recommendation.generatedCommunity,
+      recommendation.generatedBuilder,
+      recommendation.baselineCommunity,
+      recommendation.baselineBuilder,
+    ]
+      .filter((candidate): candidate is ReviewCandidate => Boolean(candidate));
+    const sources = [...new Map(selected.flatMap((candidate) => candidate.sources).map((source) => [source.chunkId, source])).values()];
+    const explanation = [...new Set(selected.map((candidate) => candidate.explanation))].join(" ");
+    return { address: address.rawAddress, recommendation, sources, explanation, review: address.reviewDecision };
   });
 }
 
@@ -88,112 +71,91 @@ function plainSnippet(snippet: string) {
   return snippet.replaceAll("<mark>", "").replaceAll("</mark>", "");
 }
 
-function reviewStatusLabel(status?: string) {
-  return status ? status.replaceAll("_", " ").toLowerCase().replace(/(^|\s)\w/g, (match) => match.toUpperCase()) : "Pending Review";
-}
-
-function effectiveCommunity(finding: Finding) {
-  return finding.review?.communityOverride || finding.community?.value;
-}
-
-function effectiveBuilder(finding: Finding) {
-  return finding.review?.builderOverride || finding.builder?.value;
-}
-
-function reviewExplanation(finding: Finding) {
-  const decision = finding.review
-    ? `Reviewer decision: ${reviewStatusLabel(finding.review.status)}.`
-    : "";
-  const note = finding.review?.note ? ` Reviewer note: ${finding.review.note}` : "";
-  return [finding.explanation, decision + note].filter(Boolean).join(" ");
+function label(value?: string) {
+  return value ? value.replaceAll("_", " ").toLowerCase().replace(/(^|\s)\w/g, (match) => match.toUpperCase()) : "Pending Review";
 }
 
 function citation(source: ReviewSource, index: number) {
   const location = source.sourceUrl ? ` ([source](${source.sourceUrl}))` : "";
-  return `${index + 1}. **${source.document.title}**${location}\n   > ${plainSnippet(source.snippet).replaceAll("\n", "\n   > ")}`;
+  const provenance = `${label(source.document.sourceLayer)} / ${label(source.document.sourceTrust)}`;
+  return `${index + 1}. **${source.document.title}** - ${provenance}${location}\n   > ${plainSnippet(source.snippet).replaceAll("\n", "\n   > ")}`;
 }
 
 export function createReviewPackageCsv(job: ReviewPackageJob) {
   const headers = [
     "Address",
-    "Likely Community",
-    "Likely Builder",
-    "Confidence",
-    "Explanation",
+    "Baseline Community",
+    "Baseline Builder",
+    "Final Community",
+    "Final Builder",
+    "Final Source Layer",
+    "Final Source Trust",
+    "Override Applied",
+    "Override Reason",
+    "Reviewer Status",
+    "Reviewer Notes",
     "Evidence Snippets",
     "Source URLs",
   ];
-  const rows = findingsFor(job).map((finding) => [
-    finding.address,
-    effectiveCommunity(finding) ?? "",
-    effectiveBuilder(finding) ?? "",
-    finding.confidence,
-    reviewExplanation(finding),
-    finding.sources.map((source) => plainSnippet(source.snippet)).join("\n---\n"),
-    [...new Set(finding.sources.map((source) => source.sourceUrl).filter(Boolean))].join("\n"),
+  const rows = findingsFor(job).map(({ address, recommendation, review, sources }) => [
+    address,
+    recommendation.baselineCommunity?.value ?? "",
+    recommendation.baselineBuilder?.value ?? "",
+    recommendation.finalCommunity ?? "",
+    recommendation.finalBuilder ?? "",
+    label(recommendation.finalSourceLayer),
+    label(recommendation.finalSourceTrust),
+    recommendation.overrideApplied ? "Yes" : "No",
+    recommendation.overrideReason ?? "",
+    label(review?.status),
+    review?.note ?? "",
+    sources.map((source) => plainSnippet(source.snippet)).join("\n---\n"),
+    [...new Set(sources.map((source) => source.sourceUrl).filter(Boolean))].join("\n"),
   ]);
-
   return [headers, ...rows].map((row) => row.map((cell) => escapeCsv(cell)).join(",")).join("\n");
 }
 
 export function createReviewPackageMarkdown(job: ReviewPackageJob) {
   const findings = findingsFor(job);
-  const allCandidates = job.addresses.flatMap((address) => address.candidates);
-  const community = bestCandidate(allCandidates, "COMMUNITY");
-  const builder = bestCandidate(allCandidates, "BUILDER");
-  const overallConfidence = confidenceFor([community, builder]);
-  const reviewItems = findings.flatMap((finding) => {
-    const concerns = [
-      !finding.community ? "community not identified" : finding.community.confidence === "Low" ? "community confidence is low" : null,
-      !finding.builder ? "builder not identified" : finding.builder.confidence === "Low" ? "builder confidence is low" : null,
-    ].filter((concern): concern is string => Boolean(concern));
-    return concerns.length ? [{ finding, concerns }] : [];
-  });
-
-  const summary = [
-    `Likely community: **${markdownValue(community?.value)}**`,
-    `Likely builder: **${markdownValue(builder?.value)}**`,
-    `Overall evidence confidence: **${overallConfidence}**`,
-  ].join("  \n");
-
-  const addressSections = findings.map((finding) => {
-    const sources = finding.sources.length
-      ? finding.sources.map((source, index) => citation(source, index)).join("\n\n")
-      : "No supporting evidence citations were identified.";
-    return [
-      `### ${finding.address}`,
-      `- Likely community: **${markdownValue(effectiveCommunity(finding))}**`,
-      `- Likely builder: **${markdownValue(effectiveBuilder(finding))}**`,
-      `- Confidence: **${finding.confidence}**`,
-      `- Explanation: ${finding.explanation || "No extracted candidate explanation is available."}`,
-      `- Review status: **${reviewStatusLabel(finding.review?.status)}**`,
-      ...(finding.review?.note ? [`- Reviewer note: ${finding.review.note}`] : []),
-      ...(finding.review?.communityOverride || finding.review?.builderOverride
-        ? [`- Original model finding: ${markdownValue(finding.community?.value)} / ${markdownValue(finding.builder?.value)}`]
-        : []),
-      "",
-      "#### Evidence Citations",
-      sources,
-    ].join("\n");
-  });
-
-  const reviewSection = reviewItems.length
-    ? reviewItems
-        .map(({ finding, concerns }) => `- **${finding.address}**: ${concerns.join("; ")}; verify against additional public source evidence.`)
-        .join("\n")
-    : "- No low-confidence findings were identified in this run.";
+  const overrideCount = findings.filter(({ recommendation }) => recommendation.overrideApplied).length;
+  const reviewItems = findings.filter(({ recommendation, review }) => (
+    recommendation.confidence === "Low"
+    || review?.status === "NEEDS_MORE_EVIDENCE"
+    || !recommendation.finalCommunity
+    || !recommendation.finalBuilder
+  ));
+  const addressSections = findings.map(({ address, recommendation, review, sources, explanation }) => [
+    `### ${address}`,
+    `- Baseline community: **${markdownValue(recommendation.baselineCommunity?.value)}**`,
+    `- Baseline builder: **${markdownValue(recommendation.baselineBuilder?.value)}**`,
+    `- Final community: **${markdownValue(recommendation.finalCommunity)}**`,
+    `- Final builder: **${markdownValue(recommendation.finalBuilder)}**`,
+    `- Final source: **${label(recommendation.finalSourceLayer)} / ${label(recommendation.finalSourceTrust)}**`,
+    `- Confidence: **${recommendation.confidence}**`,
+    `- Override applied: **${recommendation.overrideApplied ? "Yes" : "No"}**${recommendation.overrideReason ? ` - ${recommendation.overrideReason}` : ""}`,
+    `- Reviewer status: **${label(review?.status)}**`,
+    ...(review?.note ? [`- Reviewer note: ${review.note}`] : []),
+    `- Explanation: ${explanation || "No extracted candidate explanation is available."}`,
+    "",
+    "#### Evidence Citations",
+    sources.length ? sources.map((source, index) => citation(source, index)).join("\n\n") : "No supporting evidence citations were identified.",
+  ].join("\n"));
 
   return [
     `# Review Brief: ${job.name}`,
     "",
     "## Summary Recommendation",
-    summary,
+    `${findings.length} address finding(s) evaluated; ${overrideCount} final recommendation override(s) applied using internal review or higher-priority evidence.`,
+    "",
+    "Priority order: human review, reviewed verified sources, internal verified/high-trust sources, official builder/community evidence, then corroborated baseline evidence.",
     "",
     "## Per-Address Findings",
     addressSections.join("\n\n"),
     "",
     "## Low-Confidence Items Needing Human Review",
-    reviewSection,
+    reviewItems.length
+      ? reviewItems.map(({ address }) => `- **${address}**: collect or confirm additional permitted evidence before downstream use.`).join("\n")
+      : "- No low-confidence findings were identified in this run.",
     "",
   ].join("\n");
 }

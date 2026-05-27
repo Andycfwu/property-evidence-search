@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { getPrisma } from "@/lib/db/prisma";
-import { searchIndexedChunks } from "@/lib/search/ranker";
+import { retrieveLexical } from "@/lib/retrieval/lexical-retriever";
 
 const searchSchema = z.object({
   query: z.string().trim().min(2),
@@ -12,10 +12,9 @@ const searchSchema = z.object({
 export async function POST(request: Request) {
   try {
     const input = searchSchema.parse(await request.json());
-    const results = await searchIndexedChunks(getPrisma(), input.query, input.limit);
+    const results = await retrieveLexical(getPrisma(), input.query, input.limit);
     return NextResponse.json({ query: input.query, count: results.length, results });
   } catch (error) {
     return apiError(error);
   }
 }
-

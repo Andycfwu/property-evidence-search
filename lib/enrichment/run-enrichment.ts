@@ -24,8 +24,10 @@ export async function runEvidenceJob(db: PrismaClient, jobId: string) {
         .filter((result) => supportsAddress(result.text, address));
       const extracted = extractCandidates(searchResults);
       const bestByType = ["COMMUNITY", "BUILDER"].flatMap((type) => {
-        const result = extracted.find((candidate) => candidate.type === type);
-        return result ? [result] : [];
+        const candidates = extracted.filter((candidate) => candidate.type === type);
+        const final = candidates[0];
+        const baseline = candidates.find((candidate) => candidate.sources.some((source) => source.sourceLayer === "BASELINE"));
+        return [...new Map([final, baseline].filter(Boolean).map((candidate) => [candidate!.value, candidate!])).values()];
       });
 
       await db.evidenceCandidate.deleteMany({ where: { jobAddressId: address.id } });
@@ -62,7 +64,7 @@ export async function runEvidenceJob(db: PrismaClient, jobId: string) {
       data: { status: "COMPLETED" },
       include: {
         addresses: {
-          include: { candidates: { include: { sources: true } } },
+          include: { candidates: { include: { sources: { include: { document: true } } } } },
         },
       },
     });

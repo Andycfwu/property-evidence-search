@@ -10,10 +10,12 @@ export function DocumentForm() {
   const router = useRouter();
   const [mode, setMode] = useState<IngestionMode>("TEXT");
   const [sourceType, setSourceType] = useState("PASTED_TEXT");
+  const [sourceLayer, setSourceLayer] = useState("BASELINE");
+  const [sourceTrust, setSourceTrust] = useState("MEDIUM");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
-  const [indexedDocument, setIndexedDocument] = useState<{ id: string; title: string } | null>(null);
+  const [indexedDocument, setIndexedDocument] = useState<{ id: string; title: string; vectorError?: string | null } | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,6 +31,10 @@ export function DocumentForm() {
         ingestionMode: mode,
         title: form.get("title"),
         sourceType,
+        sourceLayer,
+        sourceTrust,
+        sourceName: form.get("sourceName"),
+        isOverrideSource: form.get("isOverrideSource") === "on",
         sourceUrl: form.get("sourceUrl"),
         rawText: mode === "TEXT" ? form.get("rawText") : "",
       }),
@@ -41,7 +47,7 @@ export function DocumentForm() {
       setErrorCode(result.code ?? null);
       return;
     }
-    setIndexedDocument({ id: result.document.id, title: result.document.title });
+    setIndexedDocument({ id: result.document.id, title: result.document.title, vectorError: result.vectorIndexing?.error });
     router.refresh();
   }
 
@@ -94,6 +100,36 @@ export function DocumentForm() {
           </select>
         </div>
       </div>
+      <fieldset className="rounded-2xl border border-orange-100 bg-atlas-soft/35 p-5">
+        <legend className="px-2 text-xs font-semibold uppercase tracking-[0.12em] text-atlas">Evidence provenance</legend>
+        <div className="grid gap-5 sm:grid-cols-3">
+          <div>
+            <label className="label" htmlFor="sourceLayer">Source layer</label>
+            <select className="input" id="sourceLayer" value={sourceLayer} onChange={(event) => setSourceLayer(event.target.value)}>
+              <option value="BASELINE">Baseline</option>
+              <option value="INTERNAL">Internal</option>
+              <option value="REVIEWED">Reviewed</option>
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="sourceTrust">Trust level</label>
+            <select className="input" id="sourceTrust" value={sourceTrust} onChange={(event) => setSourceTrust(event.target.value)}>
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
+              <option value="VERIFIED">Verified</option>
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="sourceName">Source name</label>
+            <input className="input" defaultValue="Manual Source" id="sourceName" name="sourceName" required />
+          </div>
+        </div>
+        <label className="mt-4 flex items-center gap-2 text-xs font-medium text-slate-600">
+          <input className="h-4 w-4 accent-orange-600" name="isOverrideSource" type="checkbox" />
+          This is an explicit internal or reviewed override source
+        </label>
+      </fieldset>
       <div>
         <label className="label" htmlFor="sourceUrl">
           Source URL {mode === "TEXT" && <span className="font-normal text-slate-400">(optional)</span>}
@@ -126,6 +162,7 @@ export function DocumentForm() {
           <p className="mt-1">
             <Link className="underline underline-offset-2" href={`/documents/${indexedDocument.id}`}>Open {indexedDocument.title}</Link> to inspect searchable chunks.
           </p>
+          {indexedDocument.vectorError && <p className="mt-2 text-xs text-slate-600">{indexedDocument.vectorError} Lexical retrieval remains available.</p>}
         </div>
       )}
       <button className="button-primary" disabled={saving}>

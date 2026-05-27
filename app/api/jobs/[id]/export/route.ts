@@ -25,7 +25,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             include: {
               sources: {
                 orderBy: { score: "desc" },
-                include: { document: { select: { title: true } } },
+                include: { document: true },
               },
             },
           },

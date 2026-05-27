@@ -36,9 +36,19 @@ export default async function DocumentsPage() {
               {documents.map((document) => (
                 <tr key={document.id}>
                   <td className="px-6 py-4 font-medium"><Link className="hover:text-atlas" href={`/documents/${document.id}`}>{document.title}</Link></td>
-                  <td className="px-6 py-4 text-slate-600">{formatSourceType(document.sourceType)}</td>
+                  <td className="px-6 py-4 text-slate-600">
+                    <p>{formatSourceType(document.sourceType)}</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <StatusBadge value={document.sourceLayer} />
+                      {document.sourceTrust === "VERIFIED" && <StatusBadge value={document.sourceTrust} />}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">{document.sourceName}</p>
+                  </td>
                   <td className="px-6 py-4 text-slate-600">{document._count.chunks} chunks / {document._count.terms} terms</td>
-                  <td className="px-6 py-4"><StatusBadge value={document.status} /></td>
+                  <td className="space-y-2 px-6 py-4">
+                    <StatusBadge label={`Lexical ${document.status}`} value={document.status} />
+                    <div><StatusBadge label={`Vector ${document.vectorStatus}`} value={document.vectorStatus === "INDEXED" ? "INDEXED" : document.vectorStatus === "FAILED" ? "FAILED" : "PENDING"} /></div>
+                  </td>
                   <td className="px-6 py-4 text-slate-600">{formatDate(document.createdAt)}</td>
                 </tr>
               ))}

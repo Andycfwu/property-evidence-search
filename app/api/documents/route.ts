@@ -4,6 +4,7 @@ import { getPrisma } from "@/lib/db/prisma";
 import { fetchPublicHtml, UrlIngestionError } from "@/lib/ingestion/fetch-url";
 import { extractReadableHtml } from "@/lib/ingestion/html-extractor";
 import { indexDocument } from "@/lib/search/indexer";
+import { indexDocumentVectors } from "@/lib/vector/vector-indexer";
 import { apiError } from "@/lib/api";
 
 const createDocumentSchema = z.object({
@@ -12,6 +13,10 @@ const createDocumentSchema = z.object({
   sourceType: z
     .enum(["PASTED_TEXT", "PUBLIC_RECORD", "BUILDER_BROCHURE", "LISTING_EXPORT", "HOA_NOTICE", "OTHER"])
     .optional(),
+  sourceLayer: z.enum(["BASELINE", "INTERNAL", "REVIEWED"]).default("BASELINE"),
+  sourceTrust: z.enum(["LOW", "MEDIUM", "HIGH", "VERIFIED"]).default("MEDIUM"),
+  sourceName: z.string().trim().min(2).max(160).default("Manual Source"),
+  isOverrideSource: z.boolean().default(false),
   sourceUrl: z.string().trim().max(2048).default(""),
   rawText: z.string().trim().default(""),
 }).superRefine((input, context) => {
@@ -62,6 +67,10 @@ export async function POST(request: Request) {
       data: {
         title,
         sourceType: input.sourceType ?? (input.ingestionMode === "URL" ? "OTHER" : "PASTED_TEXT"),
+        sourceLayer: input.sourceLayer,
+        sourceTrust: input.sourceTrust,
+        sourceName: input.sourceName,
+        isOverrideSource: input.isOverrideSource,
         sourceUrl: input.sourceUrl || null,
         rawText,
         cleanText: "",
@@ -69,9 +78,10 @@ export async function POST(request: Request) {
     });
     documentId = document.id;
     const indexing = await indexDocument(prisma, document.id, rawText);
+    const vectorIndexing = await indexDocumentVectors(prisma, document.id);
     const saved = await prisma.document.findUniqueOrThrow({ where: { id: document.id } });
 
-    return NextResponse.json({ document: saved, indexing, ingestionMode: input.ingestionMode }, { status: 201 });
+    return NextResponse.json({ document: saved, indexing, vectorIndexing, ingestionMode: input.ingestionMode }, { status: 201 });
   } catch (error) {
     if (documentId) {
       await getPrisma().document.update({

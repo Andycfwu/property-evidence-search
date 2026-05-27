@@ -19,6 +19,7 @@ import { RunJobButton } from "@/components/run-job-button";
 import { SprintMonitor } from "@/components/sprint-monitor";
 import { StatusBadge } from "@/components/status-badge";
 import { getPrisma } from "@/lib/db/prisma";
+import { resolveRecommendation } from "@/lib/enrichment/recommendation-resolver";
 import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -50,8 +51,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const filesRead = new Set(uniqueSources.map((source) => source.documentId)).size;
   const communityCandidates = candidates.filter((candidate) => candidate.candidateType === "COMMUNITY");
   const builderCandidates = candidates.filter((candidate) => candidate.candidateType === "BUILDER");
-  const bestCommunity = [...communityCandidates].sort((a, b) => b.score - a.score)[0];
-  const bestBuilder = [...builderCandidates].sort((a, b) => b.score - a.score)[0];
+  const headline = job.addresses[0] ? resolveRecommendation(job.addresses[0].candidates, job.addresses[0].reviewDecision) : undefined;
+  const bestCommunity = headline?.generatedCommunity;
+  const bestBuilder = headline?.generatedBuilder;
   const recommendationConfidence = [bestCommunity?.confidence, bestBuilder?.confidence]
     .filter(Boolean)
     .sort((a, b) => confidenceOrder[b as keyof typeof confidenceOrder] - confidenceOrder[a as keyof typeof confidenceOrder])[0];
@@ -66,22 +68,36 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     { icon: FileCheck2, title: "Brief creation", subtitle: "Package cited operator recommendation", progress: complete ? 100 : 5, done: complete },
   ];
   const reviewRows: ReviewResultRow[] = job.addresses.map((address) => {
-    const community = address.candidates.find((candidate) => candidate.candidateType === "COMMUNITY");
-    const builder = address.candidates.find((candidate) => candidate.candidateType === "BUILDER");
-    const rowCandidates = [community, builder].filter(Boolean);
-    const confidence = rowCandidates
-      .map((candidate) => candidate!.confidence as keyof typeof confidenceOrder)
-      .sort((a, b) => confidenceOrder[b] - confidenceOrder[a])[0];
+    const generatedRecommendation = resolveRecommendation(address.candidates);
+    const recommendation = resolveRecommendation(address.candidates, address.reviewDecision);
+    const rowCandidates = [
+      recommendation.generatedCommunity,
+      recommendation.generatedBuilder,
+      recommendation.baselineCommunity,
+      recommendation.baselineBuilder,
+    ].filter(Boolean);
     const rowSources = [...new Map(
       rowCandidates.flatMap((candidate) => candidate!.sources).map((source) => [source.chunkId, source]),
-    ).values()].slice(0, 2);
+    ).values()].slice(0, 4);
     return {
       id: address.id,
       rawAddress: address.rawAddress,
       addressStatus: address.status,
-      confidence,
-      community: community ? { value: community.value, score: community.score } : undefined,
-      builder: builder ? { value: builder.value, score: builder.score } : undefined,
+      confidence: recommendation.confidence as "High" | "Medium" | "Low",
+      baselineCommunity: recommendation.baselineCommunity?.value,
+      baselineBuilder: recommendation.baselineBuilder?.value,
+      generatedCommunity: recommendation.generatedCommunity ? { value: recommendation.generatedCommunity.value, score: recommendation.generatedCommunity.score } : undefined,
+      generatedBuilder: recommendation.generatedBuilder ? { value: recommendation.generatedBuilder.value, score: recommendation.generatedBuilder.score } : undefined,
+      finalCommunity: recommendation.finalCommunity,
+      finalBuilder: recommendation.finalBuilder,
+      generatedSourceLayer: generatedRecommendation.finalSourceLayer,
+      generatedSourceTrust: generatedRecommendation.finalSourceTrust,
+      finalSourceLayer: recommendation.finalSourceLayer,
+      finalSourceTrust: recommendation.finalSourceTrust,
+      generatedOverrideApplied: generatedRecommendation.overrideApplied,
+      generatedOverrideReason: generatedRecommendation.overrideReason,
+      overrideApplied: recommendation.overrideApplied,
+      overrideReason: recommendation.overrideReason,
       sources: rowSources.map((source) => ({
         id: source.id,
         score: source.score,
@@ -89,6 +105,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         sourceType: source.sourceType,
         sourceUrl: source.sourceUrl,
         title: source.document.title,
+        sourceLayer: source.document.sourceLayer,
+        sourceTrust: source.document.sourceTrust,
       })),
       review: address.reviewDecision ? {
         status: address.reviewDecision.status,
@@ -139,10 +157,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </div>
           </div>
           <RecommendationCard
-            builder={bestBuilder?.value}
-            community={bestCommunity?.value}
+            builder={headline?.finalBuilder}
+            community={headline?.finalCommunity}
             confidence={recommendationConfidence}
-            explanation={bestCommunity?.explanation ?? bestBuilder?.explanation}
+            explanation={headline?.overrideReason ?? bestCommunity?.explanation ?? bestBuilder?.explanation}
           />
         </section>
         <aside className="space-y-6">

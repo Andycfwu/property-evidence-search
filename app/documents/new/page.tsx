@@ -1,5 +1,6 @@
 import { Building2, FileText, Home, Landmark, NotebookPen } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { BatchDocumentImport } from "@/components/batch-document-import";
 import { DemoCopyButton } from "@/components/demo-copy-button";
 import { DocumentForm } from "@/components/document-form";
 import { GuideTip } from "@/components/guide-tip";
@@ -22,7 +23,7 @@ export default function NewDocumentPage() {
       <PageHeading
         eyebrow="File Browser"
         title="Source Library"
-        description="Pull public evidence into Atlas by pasting source text or fetching a readable page for immediate indexing."
+        description="Pull public evidence into Atlas by CSV batch import, pasted source text, or readable public-page retrieval."
         action={<DemoCopyButton label="Copy demo source text" text={DEMO_SOURCE_TEXT} />}
       />
       <GuideTip title="Step 1 of 4: ingest evidence.">
@@ -36,6 +37,11 @@ export default function NewDocumentPage() {
           </div>
         ))}
       </section>
+      <BatchDocumentImport />
+      <div className="mb-4">
+        <p className="atlas-kicker mb-2">Single Source</p>
+        <h2 className="text-lg font-semibold text-ink">Index one source artifact</h2>
+      </div>
       <DocumentForm />
     </AppShell>
   );

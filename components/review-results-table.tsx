@@ -32,6 +32,8 @@ type Source = {
   sourceType: string;
   sourceUrl: string | null;
   title: string;
+  sourceLayer: string;
+  sourceTrust: string;
 };
 
 export type ReviewResultRow = {
@@ -39,8 +41,20 @@ export type ReviewResultRow = {
   rawAddress: string;
   addressStatus: string;
   confidence?: "High" | "Medium" | "Low";
-  community?: Candidate;
-  builder?: Candidate;
+  baselineCommunity?: string;
+  baselineBuilder?: string;
+  generatedCommunity?: Candidate;
+  generatedBuilder?: Candidate;
+  finalCommunity?: string;
+  finalBuilder?: string;
+  generatedSourceLayer: string;
+  generatedSourceTrust: string;
+  finalSourceLayer: string;
+  finalSourceTrust: string;
+  generatedOverrideApplied: boolean;
+  generatedOverrideReason: string | null;
+  overrideApplied: boolean;
+  overrideReason: string | null;
   sources: Source[];
   review: ReviewDecision | null;
 };
@@ -61,6 +75,20 @@ function reviewStatus(row: ReviewResultRow) {
 
 function isNeedsReview(row: ReviewResultRow) {
   return ["PENDING_REVIEW", "NEEDS_MORE_EVIDENCE"].includes(reviewStatus(row));
+}
+
+function withReview(row: ReviewResultRow, review: ReviewDecision) {
+  const corrected = Boolean(review.communityOverride || review.builderOverride);
+  return {
+    ...row,
+    review,
+    finalCommunity: review.communityOverride || row.generatedCommunity?.value,
+    finalBuilder: review.builderOverride || row.generatedBuilder?.value,
+    finalSourceLayer: corrected ? "HUMAN_REVIEW" : row.generatedSourceLayer,
+    finalSourceTrust: corrected ? "VERIFIED" : row.generatedSourceTrust,
+    overrideApplied: corrected || row.generatedOverrideApplied,
+    overrideReason: corrected ? "Human review correction overrides the generated recommendation." : row.generatedOverrideReason,
+  };
 }
 
 export function ReviewResultsTable({
@@ -86,7 +114,7 @@ export function ReviewResultsTable({
   }), [rows]);
 
   function saveDecision(addressId: string, review: ReviewDecision) {
-    setRows((current) => current.map((row) => row.id === addressId ? { ...row, review } : row));
+    setRows((current) => current.map((row) => row.id === addressId ? withReview(row, review) : row));
   }
 
   return (
@@ -129,12 +157,15 @@ export function ReviewResultsTable({
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-[1320px] w-full text-left text-sm">
+          <table className="min-w-[1660px] w-full text-left text-sm">
             <thead className="bg-[#FCFBF8] text-[11px] uppercase tracking-[0.12em] text-slate-400">
               <tr>
                 <th className="px-5 py-4">Address</th>
-                <th className="px-5 py-4">Community</th>
-                <th className="px-5 py-4">Builder</th>
+                <th className="px-5 py-4">Baseline community</th>
+                <th className="px-5 py-4">Baseline builder</th>
+                <th className="px-5 py-4">Final community</th>
+                <th className="px-5 py-4">Final builder</th>
+                <th className="px-5 py-4">Final source</th>
                 <th className="px-5 py-4">Confidence</th>
                 <th className="px-5 py-4">Review</th>
                 <th className="px-5 py-4">Evidence</th>
@@ -152,7 +183,7 @@ export function ReviewResultsTable({
               ))}
               {!visibleRows.length && (
                 <tr>
-                  <td className="px-5 py-10 text-center text-slate-500" colSpan={6}>
+                  <td className="px-5 py-10 text-center text-slate-500" colSpan={9}>
                     No address findings match this review filter.
                   </td>
                 </tr>
@@ -183,9 +214,6 @@ function ReviewRow({
   const [note, setNote] = useState(row.review?.note ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const communityValue = row.review?.communityOverride || row.community?.value;
-  const builderValue = row.review?.builderOverride || row.builder?.value;
-
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -218,22 +246,38 @@ function ReviewRow({
           <div className="mt-3"><StatusBadge value={row.addressStatus} /></div>
         </td>
         <td className="px-5 py-5">
-          {communityValue ? (
+          {row.baselineCommunity ? <p className="font-medium">{row.baselineCommunity}</p> : <span className="text-slate-400">Not established</span>}
+          <div className="mt-2"><StatusBadge value="BASELINE" /></div>
+        </td>
+        <td className="px-5 py-5">
+          {row.baselineBuilder ? <p className="font-medium">{row.baselineBuilder}</p> : <span className="text-slate-400">Not established</span>}
+        </td>
+        <td className="px-5 py-5">
+          {row.finalCommunity ? (
             <>
-              <p className="font-semibold">{communityValue}</p>
+              <p className="font-semibold">{row.finalCommunity}</p>
               {row.review?.communityOverride && <p className="mt-1 text-xs text-atlas">Reviewer override</p>}
-              {row.community && <p className="mt-2 font-mono text-xs text-slate-500">Model: {row.community.value} / {row.community.score.toFixed(1)}</p>}
+              {row.generatedCommunity && <p className="mt-2 font-mono text-xs text-slate-500">Generated: {row.generatedCommunity.value} / {row.generatedCommunity.score.toFixed(1)}</p>}
             </>
           ) : <span className="text-slate-400">Pending normalization</span>}
         </td>
         <td className="px-5 py-5">
-          {builderValue ? (
+          {row.finalBuilder ? (
             <>
-              <p className="font-semibold">{builderValue}</p>
+              <p className="font-semibold">{row.finalBuilder}</p>
               {row.review?.builderOverride && <p className="mt-1 text-xs text-atlas">Reviewer override</p>}
-              {row.builder && <p className="mt-2 font-mono text-xs text-slate-500">Model: {row.builder.value} / {row.builder.score.toFixed(1)}</p>}
+              {row.generatedBuilder && <p className="mt-2 font-mono text-xs text-slate-500">Generated: {row.generatedBuilder.value} / {row.generatedBuilder.score.toFixed(1)}</p>}
             </>
           ) : <span className="text-slate-400">No builder match</span>}
+        </td>
+        <td className="min-w-52 px-5 py-5">
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge value={row.finalSourceLayer} />
+            <StatusBadge value={row.finalSourceTrust} />
+            {row.overrideApplied && <StatusBadge value="OVERRIDE_APPLIED" />}
+            {(row.review?.communityOverride || row.review?.builderOverride) && <StatusBadge value="HUMAN_CORRECTED" />}
+          </div>
+          {row.overrideReason && <p className="mt-3 text-xs leading-5 text-slate-500">{row.overrideReason}</p>}
         </td>
         <td className="px-5 py-5">{row.confidence ? <StatusBadge value={row.confidence} /> : "-"}</td>
         <td className="min-w-52 px-5 py-5">
@@ -253,7 +297,7 @@ function ReviewRow({
       </tr>
       {editing && (
         <tr className="bg-[#FCFBF8]">
-          <td className="px-5 py-5" colSpan={6}>
+          <td className="px-5 py-5" colSpan={9}>
             <form className="grid gap-4 xl:grid-cols-[210px_1fr_1fr_1.4fr_auto] xl:items-end" onSubmit={save}>
               <label className="text-sm">
                 <span className="label">Review status</span>
@@ -265,11 +309,11 @@ function ReviewRow({
               </label>
               <label className="text-sm">
                 <span className="label">Community override</span>
-                <input className="input" onChange={(event) => setCommunityOverride(event.target.value)} placeholder={row.community?.value ?? "Enter community"} value={communityOverride} />
+                <input className="input" onChange={(event) => setCommunityOverride(event.target.value)} placeholder={row.generatedCommunity?.value ?? "Enter community"} value={communityOverride} />
               </label>
               <label className="text-sm">
                 <span className="label">Builder override</span>
-                <input className="input" onChange={(event) => setBuilderOverride(event.target.value)} placeholder={row.builder?.value ?? "Enter builder"} value={builderOverride} />
+                <input className="input" onChange={(event) => setBuilderOverride(event.target.value)} placeholder={row.generatedBuilder?.value ?? "Enter builder"} value={builderOverride} />
               </label>
               <label className="text-sm">
                 <span className="label">Reviewer note</span>

@@ -1,4 +1,4 @@
-import type { PrismaClient, SourceType } from "@prisma/client";
+import type { PrismaClient, SourceLayer, SourceTrust, SourceType } from "@prisma/client";
 import { cleanText, highlightedSnippet, tokenize } from "./tokenizer";
 
 export type SearchResult = {
@@ -7,6 +7,10 @@ export type SearchResult = {
   title: string;
   sourceUrl: string | null;
   sourceType: SourceType;
+  sourceLayer: SourceLayer;
+  sourceTrust: SourceTrust;
+  sourceName: string;
+  isOverrideSource: boolean;
   text: string;
   snippet: string;
   score: number;
@@ -39,6 +43,10 @@ export async function searchIndexedChunks(
       title: row.chunk.document.title,
       sourceUrl: row.chunk.document.sourceUrl,
       sourceType: row.chunk.document.sourceType,
+      sourceLayer: row.chunk.document.sourceLayer,
+      sourceTrust: row.chunk.document.sourceTrust,
+      sourceName: row.chunk.document.sourceName,
+      isOverrideSource: row.chunk.document.isOverrideSource,
       text: row.chunk.text,
       snippet: "",
       score: 0,

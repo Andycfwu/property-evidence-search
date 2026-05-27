@@ -10,11 +10,14 @@
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "vector:backfill": "tsx scripts/vector-backfill.ts"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@prisma/client": "^6.7.0",
     "cheerio": "^1.2.0",
+    "chromadb": "^3.4.3",
     "lucide-react": "^0.511.0",
     "next": "^16.2.6",
     "react": "^19.0.0",

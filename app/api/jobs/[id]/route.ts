@@ -12,7 +12,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
           reviewDecision: true,
           candidates: {
             orderBy: { score: "desc" },
-            include: { sources: { include: { document: { select: { title: true } } } } },
+            include: { sources: { include: { document: true } } },
           },
         },
       },

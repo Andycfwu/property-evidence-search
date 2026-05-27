@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Archive, FileText, History, Plus, Search, Sparkles } from "lucide-react";
+import { Archive, FileText, FlaskConical, History, Plus, Search, Sparkles } from "lucide-react";
 import { StatusBadge } from "./status-badge";
 
 export type SidebarRun = {
@@ -11,6 +11,7 @@ export type SidebarRun = {
 const navigation = [
   { href: "/jobs/new", label: "New Evidence Run", icon: Plus },
   { href: "/search", label: "Search Evidence", icon: Search },
+  { href: "/retrieval-lab", label: "Retrieval Lab", icon: FlaskConical },
   { href: "/documents", label: "File Browser / Documents", icon: FileText },
   { href: "/jobs", label: "Runs / History", icon: History },
 ];

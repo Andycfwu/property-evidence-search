@@ -4,6 +4,7 @@ import { apiError } from "@/lib/api";
 import { getPrisma } from "@/lib/db/prisma";
 import { parseAddress } from "@/lib/enrichment/address-parser";
 import { runEvidenceJob } from "@/lib/enrichment/run-enrichment";
+import { resolveRecommendation } from "@/lib/enrichment/recommendation-resolver";
 
 const clusterSchema = z.object({
   clusterId: z.string().trim().min(1).optional(),
@@ -27,18 +28,31 @@ export async function POST(request: Request) {
       clusterId: input.clusterId ?? null,
       evidenceJobId: enriched.id,
       status: enriched.status,
-      results: enriched.addresses.map((address) => ({
-        rawAddress: address.rawAddress,
-        status: address.status,
-        candidates: address.candidates.map((candidate) => ({
-          type: candidate.candidateType,
-          value: candidate.value,
-          confidence: candidate.confidence,
-          score: candidate.score,
-          explanation: candidate.explanation,
-          sources: candidate.sources,
-        })),
-      })),
+      results: enriched.addresses.map((address) => {
+        const recommendation = resolveRecommendation(address.candidates);
+        return {
+          rawAddress: address.rawAddress,
+          status: address.status,
+          recommendation: {
+            baselineCommunity: recommendation.baselineCommunity?.value ?? null,
+            baselineBuilder: recommendation.baselineBuilder?.value ?? null,
+            finalCommunity: recommendation.finalCommunity ?? null,
+            finalBuilder: recommendation.finalBuilder ?? null,
+            finalSourceLayer: recommendation.finalSourceLayer,
+            finalSourceTrust: recommendation.finalSourceTrust,
+            overrideApplied: recommendation.overrideApplied,
+            overrideReason: recommendation.overrideReason,
+          },
+          candidates: address.candidates.map((candidate) => ({
+            type: candidate.candidateType,
+            value: candidate.value,
+            confidence: candidate.confidence,
+            score: candidate.score,
+            explanation: candidate.explanation,
+            sources: candidate.sources,
+          })),
+        };
+      }),
     });
   } catch (error) {
     return apiError(error);

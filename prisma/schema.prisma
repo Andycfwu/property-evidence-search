@@ -13,6 +13,13 @@ enum DocumentStatus {
   FAILED
 }
 
+enum VectorIndexStatus {
+  NOT_INDEXED
+  PROCESSING
+  INDEXED
+  FAILED
+}
+
 enum SourceType {
   PASTED_TEXT
   PUBLIC_RECORD
@@ -20,6 +27,19 @@ enum SourceType {
   LISTING_EXPORT
   HOA_NOTICE
   OTHER
+}
+
+enum SourceLayer {
+  BASELINE
+  INTERNAL
+  REVIEWED
+}
+
+enum SourceTrust {
+  LOW
+  MEDIUM
+  HIGH
+  VERIFIED
 }
 
 enum JobStatus {
@@ -50,20 +70,33 @@ enum ReviewStatus {
 }
 
 model Document {
-  id         String          @id @default(cuid())
-  title      String
-  sourceType SourceType      @default(PASTED_TEXT)
-  sourceUrl  String?
-  rawText    String          @db.Text
-  cleanText  String          @db.Text
-  status     DocumentStatus  @default(PROCESSING)
-  chunks     DocumentChunk[]
-  terms      SearchIndexTerm[]
-  sources    EvidenceSource[]
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id               String          @id @default(cuid())
+  title            String
+  sourceType       SourceType      @default(PASTED_TEXT)
+  sourceLayer      SourceLayer     @default(BASELINE)
+  sourceTrust      SourceTrust     @default(MEDIUM)
+  sourceName       String          @default("Manual Source")
+  sourceUrl        String?
+  externalId       String?
+  effectiveDate    DateTime?
+  importedAt       DateTime        @default(now())
+  isOverrideSource Boolean         @default(false)
+  rawText          String          @db.Text
+  cleanText        String          @db.Text
+  status           DocumentStatus  @default(PROCESSING)
+  vectorStatus     VectorIndexStatus @default(NOT_INDEXED)
+  vectorError      String?
+  vectorIndexedAt  DateTime?
+  chunks           DocumentChunk[]
+  terms            SearchIndexTerm[]
+  sources          EvidenceSource[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@index([status, createdAt])
+  @@index([vectorStatus, createdAt])
+  @@index([sourceLayer, sourceTrust])
+  @@index([externalId])
 }
 
 model DocumentChunk {
