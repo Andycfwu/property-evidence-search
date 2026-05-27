@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: #fafaf7;
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.028) 1px, transparent 1px);
+  background-size: 38px 38px;
+  color: #0f172a;
+}
+
+mark {
+  border-radius: 0.2rem;
+  background: #ffe0c7;
+  color: #0f172a;
+  padding: 0 0.12rem;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-slate-200/90 bg-white/95 shadow-panel;
+  }
+
+  .label {
+    @apply mb-2 block text-xs font-semibold uppercase tracking-[0.11em] text-slate-500;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-atlas focus:ring-2 focus:ring-atlas/10;
+  }
+
+  .button-primary {
+    @apply inline-flex items-center justify-center rounded-xl bg-atlas px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .button-secondary {
+    @apply inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-ink transition hover:border-orange-200 hover:bg-atlas-soft;
+  }
+
+  .atlas-kicker {
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-atlas;
+  }
+
+  .artifact-tab {
+    @apply rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500;
+  }
+
+  .artifact-tab-active {
+    @apply border-orange-200 bg-atlas-soft text-atlas;
+  }
+}

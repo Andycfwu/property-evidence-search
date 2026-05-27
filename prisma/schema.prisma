@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentStatus {
+  PROCESSING
+  INDEXED
+  FAILED
+}
+
+enum SourceType {
+  PASTED_TEXT
+  PUBLIC_RECORD
+  BUILDER_BROCHURE
+  LISTING_EXPORT
+  HOA_NOTICE
+  OTHER
+}
+
+enum JobStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum AddressStatus {
+  PENDING
+  ENRICHED
+  NO_MATCH
+  FAILED
+}
+
+enum CandidateType {
+  COMMUNITY
+  BUILDER
+}
+
+enum ReviewStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  NEEDS_MORE_EVIDENCE
+  MANUALLY_CORRECTED
+}
+
+model Document {
+  id         String          @id @default(cuid())
+  title      String
+  sourceType SourceType      @default(PASTED_TEXT)
+  sourceUrl  String?
+  rawText    String          @db.Text
+  cleanText  String          @db.Text
+  status     DocumentStatus  @default(PROCESSING)
+  chunks     DocumentChunk[]
+  terms      SearchIndexTerm[]
+  sources    EvidenceSource[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model DocumentChunk {
+  id         String          @id @default(cuid())
+  documentId String
+  document   Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkIndex Int
+  text       String          @db.Text
+  tokenCount Int
+  terms      SearchIndexTerm[]
+  sources    EvidenceSource[]
+  createdAt  DateTime        @default(now())
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+}
+
+model EvidenceJob {
+  id        String               @id @default(cuid())
+  name      String
+  status    JobStatus            @default(DRAFT)
+  addresses EvidenceJobAddress[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model EvidenceJobAddress {
+  id             String              @id @default(cuid())
+  jobId          String
+  job            EvidenceJob         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rawAddress     String
+  street         String?
+  city           String?
+  state          String?
+  zip            String?
+  status         AddressStatus       @default(PENDING)
+  candidates     EvidenceCandidate[]
+  reviewDecision ReviewDecision?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([jobId])
+}
+
+model ReviewDecision {
+  id                String             @id @default(cuid())
+  jobAddressId      String             @unique
+  jobAddress        EvidenceJobAddress @relation(fields: [jobAddressId], references: [id], onDelete: Cascade)
+  status            ReviewStatus       @default(PENDING_REVIEW)
+  communityOverride String?
+  builderOverride   String?
+  note              String?            @db.Text
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([status])
+}
+
+model EvidenceCandidate {
+  id           String             @id @default(cuid())
+  jobAddressId String
+  jobAddress   EvidenceJobAddress @relation(fields: [jobAddressId], references: [id], onDelete: Cascade)
+  candidateType CandidateType
+  value        String
+  confidence   String
+  score        Float
+  explanation  String             @db.Text
+  sources      EvidenceSource[]
+  createdAt    DateTime           @default(now())
+
+  @@index([jobAddressId, candidateType])
+}
+
+model EvidenceSource {
+  id          String            @id @default(cuid())
+  candidateId String
+  candidate   EvidenceCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  documentId  String
+  document    Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkId     String
+  chunk       DocumentChunk     @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  sourceUrl   String?
+  snippet     String            @db.Text
+  sourceType  SourceType
+  score       Float
+  createdAt   DateTime          @default(now())
+
+  @@index([candidateId])
+}
+
+model SearchIndexTerm {
+  id         String        @id @default(cuid())
+  term       String
+  chunkId    String
+  chunk      DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  documentId String
+  document   Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  frequency  Int
+
+  @@unique([term, chunkId])
+  @@index([term])
+  @@index([documentId])
+}
